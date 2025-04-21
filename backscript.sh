@@ -140,7 +140,7 @@ case $choice in
         ports_toml=$(printf '"%s",' "${ports[@]}" | sed 's/,$//')
 
         # Create config.toml with user-provided values
-        echo "Creating /root/backhaul/config.tomlঋ
+        echo "Creating /root/backhaul/config.toml..."
         cat > /root/backhaul/config.toml << EOF
 [server]
 bind_addr = "0.0.0.0:5080"
@@ -204,7 +204,7 @@ nodelay = true
 retry_interval = 3
 sniffer = false
 web_port = 5081
-sniffer_log = "/root/backhaul.json"
+_herejson"
 log_level = "info"
 EOF
 
