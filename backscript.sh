@@ -61,49 +61,12 @@ EOF
     fi
 }
 
-# Function to enable BBR
-enable_bbr() {
-    echo "Enabling BBR congestion control..."
-
-    # Check if BBR is available in the kernel
-    if ! sysctl net.ipv4.tcp_available_congestion_control | grep -q "bbr"; then
-        echo "BBR is not supported by this kernel. Please ensure your kernel version is 4.9 or higher. Exiting..."
-        exit 1
-    fi
-
-    # Set BBR as the congestion control algorithm and fq as the queue discipline
-    echo "Configuring sysctl for BBR..."
-    if ! grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf; then
-        echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
-    fi
-    if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
-        echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
-    fi
-
-    # Apply sysctl changes
-    echo "Applying sysctl changes..."
-    sudo sysctl -p >/dev/null
-    if [ $? -ne 0 ]; then
-        echo "Failed to apply sysctl changes. Exiting..."
-        exit 1
-    fi
-
-    # Verify BBR is enabled
-    if sysctl net.ipv4.tcp_congestion_control | grep -q "bbr"; then
-        echo "BBR has been successfully enabled."
-    else
-        echo "Failed to enable BBR. Please check your system configuration."
-        exit 1
-    fi
-}
-
 # Prompt user for server selection
 echo "Which server are you on?"
 echo "1) IRAN Server"
 echo "2) KHAREJ Server"
 echo "3) Remove Tunnel"
-echo "4) Enable BBR"
-read -p "Enter your choice (1, 2, 3, or 4): " choice
+read -p "Enter your choice (1, 2, or 3): " choice
 
 case $choice in
     1)
@@ -139,4 +102,143 @@ case $choice in
         # Format ports for TOML (comma-separated, quoted)
         ports_toml=$(printf '"%s",' "${ports[@]}" | sed 's/,$//')
 
-        # Create config.toml with
+        # Create config.toml with user-provided values
+        echo "Creating /root/backhaul/config.toml..."
+        cat > /root/backhaul/config.toml << EOF
+[server]
+bind_addr = "0.0.0.0:5080"
+transport = "tcp"
+accept_udp = false
+token = "${token}"
+keepalive_period = 75
+nodelay = true
+heartbeat = 40
+channel_size = 2048
+sniffer = false
+web_port = 5081
+sniffer_log = "/root/backhaul.json"
+log_level = "info"
+ports = [
+    ${ports_toml}
+]
+EOF
+
+        # Verify file creation
+        if [ -f /root/backhaul/config.toml ]; then
+            echo "Config file created successfully at /root/backhaul/config.toml"
+        else
+            echo "Failed to create config file. Exiting..."
+            exit 1
+        fi
+
+        # Create and activate systemd service
+        create_systemd_service
+        ;;
+    2)
+        run_prerequisites
+        echo "Executing commands for KHAREJ Server..."
+        # Prompt for IRAN IP address
+        read -p "Enter the IRAN IP address: " iran_ip
+        # Validate IP address format (basic check)
+        if [[ ! $iran_ip =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+            echo "Invalid IP address format. Exiting..."
+            exit 1
+        fi
+
+        # Prompt for token
+        read -p "Enter the token: " token
+        if [ -z "$token" ]; then
+            echo "Token cannot be empty. Exiting..."
+            exit 1
+        fi
+
+        # Create config.toml with user-provided values
+        echo "Creating /root/backhaul/config.toml..."
+        cat > /root/backhaul/config.toml << EOF
+[client]
+remote_addr = "${iran_ip}:5080"
+transport = "tcp"
+token = "${token}"
+connection_pool = 8
+aggressive_pool = false
+keepalive_period = 75
+dial_timeout = 10
+nodelay = true
+retry_interval = 3
+sniffer = false
+web_port = 5081
+sniffer_log = "/root/backhaul.json"
+log_level = "info"
+EOF
+
+        # Verify file creation
+        if [ -f /root/backhaul/config.toml ]; then
+            echo "Config file created successfully at /root/backhaul/config.toml"
+        else
+            echo "Failed to create config file. Exiting..."
+            exit 1
+        fi
+
+        # Create and activate systemd service
+        create_systemd_service
+        ;;
+    3)
+        echo "Removing tunnel configuration..."
+        # Disable and stop the backhaul service
+        echo "Disabling and stopping backhaul service..."
+        sudo systemctl disable backhaul.service 2>/dev/null
+        sudo systemctl stop backhaul.service 2>/dev/null
+
+        # Remove the systemd service file
+        echo "Removing systemd service file..."
+        if [ -f /etc/systemd/system/backhaul.service ]; then
+            sudo rm -f /etc/systemd/system/backhaul.service
+            if [ $? -eq 0 ]; then
+                echo "Systemd service file removed successfully."
+            else
+                echo "Failed to remove systemd service file. Exiting..."
+                exit 1
+            fi
+        else
+            echo "Systemd service file does not exist. Skipping removal."
+        fi
+
+        # Reload systemd to reflect changes
+        echo "Reloading systemd daemon..."
+        sudo systemctl daemon-reload
+
+        # Remove backhaul directory and backhaul.json
+        echo "Removing /root/backhaul directory and /root/backhaul.json..."
+        if [ -d /root/backhaul ]; then
+            sudo rm -rf /root/backhaul
+            if [ $? -eq 0 ]; then
+                echo "/root/backhaul directory removed successfully."
+            else
+                echo "Failed to remove /root/backhaul directory. Exiting..."
+                exit 1
+            fi
+        else
+            echo "/root/backhaul directory does not exist. Skipping removal."
+        fi
+
+        if [ -f /root/backhaul.json ]; then
+            sudo rm -f /root/backhaul.json
+            if [ $? -eq 0 ]; then
+                echo "/root/backhaul.json removed successfully."
+            else
+                echo "Failed to remove /root/backhaul.json. Exiting..."
+                exit 1
+            fi
+        else
+            echo "/root/backhaul.json does not exist. Skipping removal."
+        fi
+
+        echo "Tunnel removal completed."
+        ;;
+    *)
+        echo "Invalid choice. Please select 1, 2, or 3."
+        exit 1
+        ;;
+esac
+
+echo "Script execution completed."
