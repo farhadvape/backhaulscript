@@ -61,12 +61,49 @@ EOF
     fi
 }
 
+# Function to enable BBR
+enable_bbr() {
+    echo "Enabling BBR congestion control..."
+
+    # Check if BBR is available in the kernel
+    if ! sysctl net.ipv4.tcp_available_congestion_control | grep -q "bbr"; then
+        echo "BBR is not supported by this kernel. Please ensure your kernel version is 4.9 or higher. Exiting..."
+        exit 1
+    fi
+
+    # Set BBR as the congestion control algorithm and fq as the queue discipline
+    echo "Configuring sysctl for BBR..."
+    if ! grep -q "net.core.default_qdisc=fq" /etc/sysctl.conf; then
+        echo "net.core.default_qdisc=fq" | sudo tee -a /etc/sysctl.conf
+    fi
+    if ! grep -q "net.ipv4.tcp_congestion_control=bbr" /etc/sysctl.conf; then
+        echo "net.ipv4.tcp_congestion_control=bbr" | sudo tee -a /etc/sysctl.conf
+    fi
+
+    # Apply sysctl changes
+    echo "Applying sysctl changes..."
+    sudo sysctl -p >/dev/null
+    if [ $? -ne 0 ]; then
+        echo "Failed to apply sysctl changes. Exiting..."
+        exit 1
+    fi
+
+    # Verify BBR is enabled
+    if sysctl net.ipv4.tcp_congestion_control | grep -q "bbr"; then
+        echo "BBR has been successfully enabled."
+    else
+        echo "Failed to enable BBR. Please check your system configuration."
+        exit 1
+    fi
+}
+
 # Prompt user for server selection
 echo "Which server are you on?"
 echo "1) IRAN Server"
 echo "2) KHAREJ Server"
 echo "3) Remove Tunnel"
-read -p "Enter your choice (1, 2, or 3): " choice
+echo "4) Enable BBR"
+read -p "Enter your choice (1, 2, 3, or 4): " choice
 
 case $choice in
     1)
@@ -103,7 +140,7 @@ case $choice in
         ports_toml=$(printf '"%s",' "${ports[@]}" | sed 's/,$//')
 
         # Create config.toml with user-provided values
-        echo "Creating /root/backhaul/config.toml..."
+        echo "Creating /root/backhaul/config.tomlঋ
         cat > /root/backhaul/config.toml << EOF
 [server]
 bind_addr = "0.0.0.0:5080"
@@ -235,8 +272,11 @@ EOF
 
         echo "Tunnel removal completed."
         ;;
+    4)
+        enable_bbr
+        ;;
     *)
-        echo "Invalid choice. Please select 1, 2, or 3."
+        echo "Invalid choice. Please select 1, 2, 3, or 4."
         exit 1
         ;;
 esac
