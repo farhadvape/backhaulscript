@@ -1,27 +1,23 @@
 #!/bin/bash
 
-# Run prerequisite commands for both server types
-echo "Running prerequisite commands..."
-ARCH=$(uname -m); OS=$(uname -s | tr '[:upper:]' '[:lower:]'); \
-[ "$ARCH" = "x86_64" ] && ARCH="amd64" || ARCH="arm64"; \
-FILE_NAME="backhaul_${OS}_${ARCH}.tar.gz"; \
-echo "Downloading $FILE_NAME..."; \
-curl -L -O "https://github.com/Musixal/Backhaul/releases/latest/download/$FILE_NAME"; \
-mkdir -p /root/backhaul && tar -xzf "$FILE_NAME" -C /root/backhaul && \
-{ rm -f "$FILE_NAME" /root/backhaul/LICENSE /root/backhaul/README.md; echo "Extraction successful, cleaned up files."; } || \
-{ echo "Extraction failed!"; exit 1; }
+# Run prerequisite commands for both server types (only if installing)
+run_prerequisites() {
+    echo "Running prerequisite commands..."
+    ARCH=$(uname -m); OS=$(uname -s | tr '[:upper:]' '[:lower:]'); \
+    [ "$ARCH" = "x86_64" ] && ARCH="amd64" || ARCH="arm64"; \
+    FILE_NAME="backhaul_${OS}_${ARCH}.tar.gz"; \
+    echo "Downloading $FILE_NAME..."; \
+    curl -L -O "https://github.com/Musixal/Backhaul/releases/latest/download/$FILE_NAME"; \
+    mkdir -p /root/backhaul && tar -xzf "$FILE_NAME" -C /root/backhaul && \
+    { rm -f "$FILE_NAME" /root/backhaul/LICENSE /root/backhaul/README.md; echo "Extraction successful, cleaned up files."; } || \
+    { echo "Extraction failed!"; exit 1; }
 
-# Check if prerequisite commands were successful
-if [ $? -ne 0 ]; then
-    echo "Prerequisite commands failed. Exiting..."
-    exit 1
-fi
-
-# Prompt user for server selection
-echo -e "\nWhich server are you on?"
-echo "1) IRAN Server"
-echo "2) KHAREJ Server"
-read -p "Enter your choice (1 or 2): " choice
+    # Check if prerequisite commands were successful
+    if [ $? -ne 0 ]; then
+        echo "Prerequisite commands failed. Exiting..."
+        exit 1
+    fi
+}
 
 # Function to create and activate systemd service
 create_systemd_service() {
@@ -65,8 +61,16 @@ EOF
     fi
 }
 
+# Prompt user for server selection
+echo "Which server are you on?"
+echo "1) IRAN Server"
+echo "2) KHAREJ Server"
+echo "3) Remove Tunnel"
+read -p "Enter your choice (1, 2, or 3): " choice
+
 case $choice in
     1)
+        run_prerequisites
         echo "Executing commands for IRAN Server..."
         # Prompt for token
         read -p "Enter the token: " token
@@ -131,6 +135,7 @@ EOF
         create_systemd_service
         ;;
     2)
+        run_prerequisites
         echo "Executing commands for KHAREJ Server..."
         # Prompt for IRAN IP address
         read -p "Enter the IRAN IP address: " iran_ip
@@ -177,8 +182,61 @@ EOF
         # Create and activate systemd service
         create_systemd_service
         ;;
+    3)
+        echo "Removing tunnel configuration..."
+        # Disable and stop the backhaul service
+        echo "Disabling and stopping backhaul service..."
+        sudo systemctl disable backhaul.service 2>/dev/null
+        sudo systemctl stop backhaul.service 2>/dev/null
+
+        # Remove the systemd service file
+        echo "Removing systemd service file..."
+        if [ -f /etc/systemd/system/backhaul.service ]; then
+            sudo rm -f /etc/systemd/system/backhaul.service
+            if [ $? -eq 0 ]; then
+                echo "Systemd service file removed successfully."
+            else
+                echo "Failed to remove systemd service file. Exiting..."
+                exit 1
+            fi
+        else
+            echo "Systemd service file does not exist. Skipping removal."
+        fi
+
+        # Reload systemd to reflect changes
+        echo "Reloading systemd daemon..."
+        sudo systemctl daemon-reload
+
+        # Remove backhaul directory and backhaul.json
+        echo "Removing /root/backhaul directory and /root/backhaul.json..."
+        if [ -d /root/backhaul ]; then
+            sudo rm -rf /root/backhaul
+            if [ $? -eq 0 ]; then
+                echo "/root/backhaul directory removed successfully."
+            else
+                echo "Failed to remove /root/backhaul directory. Exiting..."
+                exit 1
+            fi
+        else
+            echo "/root/backhaul directory does not exist. Skipping removal."
+        fi
+
+        if [ -f /root/backhaul.json ]; then
+            sudo rm -f /root/backhaul.json
+            if [ $? -eq 0 ]; then
+                echo "/root/backhaul.json removed successfully."
+            else
+                echo "Failed to remove /root/backhaul.json. Exiting..."
+                exit 1
+            fi
+        else
+            echo "/root/backhaul.json does not exist. Skipping removal."
+        fi
+
+        echo "Tunnel removal completed."
+        ;;
     *)
-        echo "Invalid choice. Please select 1 or 2."
+        echo "Invalid choice. Please select 1, 2, or 3."
         exit 1
         ;;
 esac
