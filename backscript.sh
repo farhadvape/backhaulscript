@@ -106,14 +106,19 @@ case $choice in
         echo "Creating /root/backhaul/config.toml..."
         cat > /root/backhaul/config.toml << EOF
 [server]
-bind_addr = "0.0.0.0:5080"
-transport = "tcp"
+bind_addr = "0.0.0.0:20500"
+transport = "tcpmux"
 accept_udp = false
 token = "${token}"
 keepalive_period = 75
 nodelay = true
 heartbeat = 40
 channel_size = 2048
+mux_con = 8
+mux_version = 1
+mux_framesize = 32768
+mux_recievebuffer = 4194304
+mux_streambuffer = 65536
 sniffer = false
 web_port = 5081
 sniffer_log = "/root/backhaul.json"
@@ -156,8 +161,8 @@ EOF
         echo "Creating /root/backhaul/config.toml..."
         cat > /root/backhaul/config.toml << EOF
 [client]
-remote_addr = "${iran_ip}:5080"
-transport = "tcp"
+remote_addr = "${iran_ip}:20500"
+transport = "tcpmux"
 token = "${token}"
 connection_pool = 8
 aggressive_pool = false
@@ -165,6 +170,10 @@ keepalive_period = 75
 dial_timeout = 10
 nodelay = true
 retry_interval = 3
+mux_version = 1
+mux_framesize = 32768
+mux_recievebuffer = 4194304
+mux_streambuffer = 65536
 sniffer = false
 web_port = 5081
 sniffer_log = "/root/backhaul.json"
